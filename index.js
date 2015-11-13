@@ -1,16 +1,17 @@
 
+var cluster = require('cluster');
+var numCPUs = require('os').cpus().length;
 var http = require('http');
 var debounce = require('debounce');
 
 var StatsD = require('node-dogstatsd').StatsD;
 var dd = new StatsD();
-var fixedDelay;
 
-var totalUsers = 30;
-var rate = 25; //pre second
-fixedDelay = Math.round(1000/rate);
+var totalUsers = 64; //Use powers of 2 so that there is an even number on  each core 
+var rate = 100; //per second
+var randomTiming = true;
 
-var host = 'localhost';
+var host = '192.168.1.2';
 var port = '3000';
 /*
    var host = 'api.instanews.com';
@@ -29,12 +30,13 @@ var box = {
   }
 };
 
+var fixedDelay = Math.round(totalUsers*1000/rate);
 var userCreationTime = totalUsers*500; //ms
 //Max interactions per user
-var max = 1000;
+var maxRequests = 1000;
 //Time delay range between user interactions
 var minDelay = 1000; //ms
-var maxDelay = 2*totalUsers*1000/rate - minDelay; //ms
+var maxDelay = 2*fixedDelay - minDelay; //ms
 
 var options = {
   host: 'api.instanews.com',
@@ -44,28 +46,23 @@ var options = {
 
 var reqPerSec = 0;
 var pendingReq = 0;
-var totalRequests = 0;
+var totalReq = 0;
 
 var print = debounce(function () {
   process.stdout.clearLine();
   process.stdout.cursorTo(0);
-  process.stdout.write(' Rate: ' + reqPerSec + '\tPending: ' + pendingReq + '\tTotal: ' + totalRequests + '\tDelta: ' + delta);
-}, 16);
+  process.stdout.write('Total: ' + totalReq + '\tPending: ' + pendingReq + '\tLast Delay: ' + delta);
+}, 66);
 
 var last = Date.now();
 var delta = 0;
-console.log('\n***********************************************\n');
+
 var request = function (options, send, end) {
   var newTime = Date.now();
   delta = newTime - last;
   last = newTime;
   pendingReq++;
-  totalRequests++;
-  print();
-  reqPerSec++;
-  setTimeout(function () {
-    reqPerSec--;
-  }, 1000);
+  totalReq++;
 
   if (!end) {
     if( send instanceof Function) {
@@ -76,10 +73,12 @@ var request = function (options, send, end) {
     }
   }
 
-  dd.histogram('DOS.request.total', totalRequests);
-  dd.histogram('DOS.request.pending', pendingReq);
-  dd.increment('DOS.request.count');
-  dd.timing('DOS.request.delay', delta);
+  process.send({
+    id: cluster.worker.id,
+    totalReq: totalReq,
+    delta: delta,
+    pendingReq: pendingReq
+  });
 
   //Close the connection after the request is complete
   options.agent = false;
@@ -97,6 +96,11 @@ var request = function (options, send, end) {
 
     resp.on('end', function () {
       pendingReq--;
+      process.send({
+        id: cluster.worker.id,
+        pendingReq: pendingReq
+      });
+
       var res = JSON.parse(str);
       if(res.error) {
         console.dir(res);
@@ -106,7 +110,7 @@ var request = function (options, send, end) {
   });
 
   req.on('error', function(e) {
-      console.log('problem with request: ' + e.message);
+    console.log('problem with request: ' + e.message);
   });
 
   if(send) {
@@ -350,25 +354,21 @@ var post = [
 
 var actions = [get, post];
 
-var users = [];
-
-var run = function (user, count) {
+var run = function (user) {
+  var rand = Math.random();
   var timeout;
-  if(fixedDelay) {
+  if(!randomTiming) {
     timeout = fixedDelay;
   } else {
-    timeout = Math.floor(Math.random()*(maxDelay -minDelay) + minDelay);
+    timeout = rand*(maxDelay -minDelay) + minDelay;
   }
 
-  if(!user && users.length) {
-    user = users[Math.round(Math.random()*(users.length -1))];
-  } 
   if(user) {
-    var idx = Math.round(Math.random()*(actions.length -1));
+    var idx = Math.round(rand*(actions.length -1));
     // GET or POST
     var acts = actions[idx];
     // Random method from list
-    idx = Math.round(Math.random()*(acts.length -1));
+    idx = Math.round(rand*(acts.length -1));
     var action = acts[idx];
     action(user);
   } else {
@@ -376,12 +376,8 @@ var run = function (user, count) {
   }
 
   setTimeout(function () {
-    if(count < max) {
-      if(fixedDelay) {
-        run(null, count);
-      } else {
-        run(user, count);
-      }
+    if(totalReq < maxRequests) {
+      run(user);
     }
   }, timeout);
 };
@@ -403,57 +399,99 @@ var randomString = function (limit) {
   return str;
 };
 
-for(var i = 0 ; i < totalUsers ; i++) {
-  var timeout = Math.floor(Math.random()*userCreationTime); // create the users randomly over the next minute
-  // 1 users per second
-  if(fixedDelay) {
-    timeout = 1000*i;
-  }
+if(cluster.isMaster) {
+//  console.log('Starting ' + totalUsers + ' processes');
+  console.log('Sending requests to ' + host + ':'+ port);
 
-  var count = 0;
-  setTimeout(function () {
-    count++;
-    //console.log(count + ': ' + new Date());
-    var username = randomString(4);
-    var password = 'password' + i;
+  console.log('Running at rate of ' + rate + ' requests per second using ' + totalUsers + ' users');
+
+  console.log('\n***********************************************\n');
+  var workers = [];
+  var startNode = function (count) {
+    count--
+      var worker = cluster.fork();
+      worker.pendingReq = 0;
+      worker.totalReq = 0;
+      workers.push(worker);
+      if(count) {
+        setTimeout(function () {
+          startNode(count);
+        }, 1000);
+      }
+  };
+  startNode(totalUsers);
+
+  cluster.on('exit', function(worker, code, signal) {
+    console.log('worker ' + worker.process.pid + ' died');
+  });
+
+  cluster.on('message', function (msg) {
+    if(msg instanceof Object) {
+      for(var i in workers) {
+        if(workers[i].id === msg.id) {
+          if(msg.totalReq !== undefined) {
+            totalReq -= workers[i].totalReq;
+            workers[i].totalReq = msg.totalReq;
+            totalReq += workers[i].totalReq;
+            dd.histogram('DOS.request.total', totalReq);
+            dd.increment('DOS.request.count');
+          }
+
+          if(msg.pendingReq !== undefined) {
+            pendingReq -= workers[i].pendingReq;
+            workers[i].pendingReq = msg.pendingReq;
+            pendingReq += workers[i].pendingReq;
+            dd.histogram('DOS.request.pending', pendingReq);
+          }
+
+          if(msg.delta !== undefined) {
+            delta = msg.delta/workers.length;
+            dd.timing('DOS.request.delay', delta);
+          }
+        }
+      }
+
+      print();
+      // This might be resulting in build up of timeout functions
+      /*
+      reqPerSec++;
+      setTimeout(function () {
+        reqPerSec--;
+      }, 1000);
+     */
+    }
+  });
+} else {
+  // Create a user and sign them in
+  var username = randomString(4);
+  var password = 'password';
+  request({
+    host: host,
+    port: port,
+    method: 'POST',
+    headers: {"Content-Type": "application/json"},
+    path: '/api/journalists'
+  }, JSON.stringify({
+    username: username,
+    password: password,
+    email: username + '@instanews.org'
+  }), function (res) {
     request({
       host: host,
       port: port,
       method: 'POST',
       headers: {"Content-Type": "application/json"},
-      //path: '/api/journalists?include=user&rememberMe=true'
-      path: '/api/journalists'
+      path: '/api/journalists/login'
     }, JSON.stringify({
       username: username,
-      password: 'password' + i,
-      email: username + '@instanews.org'
-    }), function (res) {
-      //console.dir(res);
-      request({
-        host: host,
-        port: port,
-        method: 'POST',
-        headers: {"Content-Type": "application/json"},
-        //path: '/api/journalists/login?include=user&rememberMe=true'
-        path: '/api/journalists/login'
-      }, JSON.stringify({
-        username: username,
-        password: password
-      }), function (user) {
-        if(user.error) {
-          //console.log(user);
-        } else {
-          if(fixedDelay) {
-            users.push(user);
-          } else {
-            run(user, 0);
-          }
-        }
-      });
+      password: password
+    }), function (usr) {
+      if(usr.error) {
+        console.error(usr);
+      } else {
+        //Save the user and begin execution
+        run(usr);
+      }
     });
-  }, timeout);
-}
-
-if(fixedDelay) {
-  run(null, 0);
+  });
 }
