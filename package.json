@@ -1,0 +1,15 @@
+{
+  "name": "instados",
+  "version": "1.0.0",
+  "description": "Mimics user behaviour on the Instanews.com api in order to stress test our system.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Zane McCaig",
+  "license": "ISC",
+  "dependencies": {
+    "debounce": "^1.0.0",
+    "node-dogstatsd": "0.0.6"
+  }
+}
