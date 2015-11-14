@@ -8,15 +8,16 @@ var StatsD = require('node-dogstatsd').StatsD;
 var dd = new StatsD();
 
 var totalUsers = 64; //Use powers of 2 so that there is an even number on  each core 
-var rate = 100; //per second
+var rate = 20; //per second
 var randomTiming = true;
 
+/*
 var host = '192.168.1.2';
 var port = '3000';
-/*
-   var host = 'api.instanews.com';
-   var port = '80';
-   */
+*/
+var host = 'instanews.com';
+var port = '80';
+
 var box = {
   //Bottom Left corner
   sw: {
@@ -47,11 +48,12 @@ var options = {
 var reqPerSec = 0;
 var pendingReq = 0;
 var totalReq = 0;
+var errors = 0;
 
 var print = debounce(function () {
   process.stdout.clearLine();
   process.stdout.cursorTo(0);
-  process.stdout.write('Total: ' + totalReq + '\tPending: ' + pendingReq + '\tLast Delay: ' + delta);
+  process.stdout.write('Total: ' + totalReq + '\tErrors: ' + errors + '\tPending: ' + pendingReq + '\tLast Delay: ' + delta);
 }, 66);
 
 var last = Date.now();
@@ -110,7 +112,13 @@ var request = function (options, send, end) {
   });
 
   req.on('error', function(e) {
-    console.log('problem with request: ' + e.message);
+    //console.log('problem with request: ' + e.message);
+    pendingReq--;
+    process.send({
+      id: cluster.worker.id,
+      pendingReq: pendingReq,
+      error: true
+    });
   });
 
   if(send) {
@@ -447,6 +455,11 @@ if(cluster.isMaster) {
           if(msg.delta !== undefined) {
             delta = msg.delta/workers.length;
             dd.timing('DOS.request.delay', delta);
+          }
+
+          if(msg.error) {
+            errors++;
+            dd.increment('DOS.request.error');
           }
         }
       }
