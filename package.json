@@ -4,7 +4,8 @@
   "description": "Mimics user behaviour on the Instanews.com api in order to stress test our system.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
   },
   "author": "Zane McCaig",
   "license": "ISC",

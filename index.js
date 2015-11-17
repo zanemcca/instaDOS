@@ -7,16 +7,16 @@ var debounce = require('debounce');
 var StatsD = require('node-dogstatsd').StatsD;
 var dd = new StatsD();
 
-var totalUsers = 64; //Use powers of 2 so that there is an even number on  each core 
-var rate = 20; //per second
-var randomTiming = true;
+var totalUsers = process.env.TOTAL_USERS || 50; //Use powers of 2 so that there is an even number on  each core 
+var rate = process.env.RATE || 50; //per second
+var randomTiming = process.env.RANDOM_TIMING || true;
 
+var host = process.env.HOST_URL || 'instanews.com';
+var port = process.env.HOST_PORT || '80';
 /*
 var host = '192.168.1.2';
 var port = '3000';
 */
-var host = 'instanews.com';
-var port = '80';
 
 var box = {
   //Bottom Left corner
