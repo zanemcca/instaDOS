@@ -51,9 +51,14 @@ var totalReq = 0;
 var errors = 0;
 
 var print = debounce(function () {
-  process.stdout.clearLine();
-  process.stdout.cursorTo(0);
-  process.stdout.write('Total: ' + totalReq + '\tErrors: ' + errors + '\tPending: ' + pendingReq + '\tLast Delay: ' + delta);
+  var message = 'Total: ' + totalReq + '\tErrors: ' + errors + '\tPending: ' + pendingReq + '\tLast Delay: ' + delta;
+  if(process.stdout && process.stdout.clearLine) {
+    process.stdout.clearLine();
+    process.stdout.cursorTo(0);
+    process.stdout.write(message);
+  } else {
+     console.log(message);
+  }
 }, 66);
 
 var last = Date.now();
