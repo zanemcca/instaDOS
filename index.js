@@ -5,7 +5,26 @@ var http = require('http');
 var debounce = require('debounce');
 
 var StatsD = require('node-dogstatsd').StatsD;
-var dd = new StatsD();
+
+var datadogHost = 'localhost';
+for(var i in process.env) {
+  if(i.match(/^DATADOG_\d_ENV_TUTUM_NODE_HOSTNAME$/)) {
+    if(process.env[i] === process.env.TUTUM_NODE_HOSTNAME) {
+      var num = i[8];
+      var env = 'DATADOG_' + num + '_ENV_TUTUM_CONTAINER_HOSTNAME';
+      env  = process.env[env];
+
+      if(env) {
+        datadogHost = env;
+        break;
+      } else {
+        console.error('Environment variable ' + env + ' not valid!');
+      }
+    }
+  }
+}
+
+var dd = new StatsD(datadogHost, 8125);
 
 var totalUsers = process.env.TOTAL_USERS || 50; //Use powers of 2 so that there is an even number on  each core 
 var rate = process.env.RATE || 50; //per second
@@ -14,9 +33,9 @@ var randomTiming = process.env.RANDOM_TIMING || true;
 var host = process.env.HOST_URL || 'instanews.com';
 var port = process.env.HOST_PORT || '80';
 /*
-var host = '192.168.1.2';
-var port = '3000';
-*/
+   var host = '192.168.1.2';
+   var port = '3000';
+   */
 
 var box = {
   //Bottom Left corner
@@ -57,7 +76,7 @@ var print = debounce(function () {
     process.stdout.cursorTo(0);
     process.stdout.write(message);
   } else {
-     console.log(message);
+    console.log(message);
   }
 }, 66);
 
@@ -413,7 +432,7 @@ var randomString = function (limit) {
 };
 
 if(cluster.isMaster) {
-//  console.log('Starting ' + totalUsers + ' processes');
+  //  console.log('Starting ' + totalUsers + ' processes');
   console.log('Sending requests to ' + host + ':'+ port);
 
   console.log('Running at rate of ' + rate + ' requests per second using ' + totalUsers + ' users');
@@ -423,14 +442,14 @@ if(cluster.isMaster) {
   var startNode = function (count) {
     count--
       var worker = cluster.fork();
-      worker.pendingReq = 0;
-      worker.totalReq = 0;
-      workers.push(worker);
-      if(count) {
-        setTimeout(function () {
-          startNode(count);
-        }, 1000);
-      }
+    worker.pendingReq = 0;
+    worker.totalReq = 0;
+    workers.push(worker);
+    if(count) {
+      setTimeout(function () {
+        startNode(count);
+      }, 1000);
+    }
   };
   startNode(totalUsers);
 
@@ -472,11 +491,11 @@ if(cluster.isMaster) {
       print();
       // This might be resulting in build up of timeout functions
       /*
-      reqPerSec++;
-      setTimeout(function () {
-        reqPerSec--;
-      }, 1000);
-     */
+         reqPerSec++;
+         setTimeout(function () {
+         reqPerSec--;
+         }, 1000);
+         */
     }
   });
 } else {
