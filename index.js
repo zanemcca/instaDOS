@@ -26,11 +26,11 @@ for(var i in process.env) {
 
 var dd = new StatsD(datadogHost, 8125);
 
-var totalUsers = process.env.TOTAL_USERS || 50; //Use powers of 2 so that there is an even number on  each core 
-var rate = process.env.RATE || 50; //per second
+var totalUsers = process.env.TOTAL_USERS || 4; //Use powers of 2 so that there is an even number on  each core 
+var rate = process.env.RATE || 12; //per second
 var randomTiming = process.env.RANDOM_TIMING || true;
 
-var host = process.env.HOST_URL || 'instanews.com';
+var host = process.env.HOST_URL || 'turtle.instanews.com';
 var port = process.env.HOST_PORT || '80';
 /*
    var host = '192.168.1.2';
@@ -161,6 +161,10 @@ var randomLocation = function () {
 
 var getRandomUpVote = function (user) {
   return getRandom(user.upVotes);
+};
+
+var getRandomView = function () {
+  return getRandom([]);
 };
 
 var getRandomDownVote = function (user) {
@@ -367,6 +371,31 @@ var UpVotes = {
   }
 };
 
+ var View = {
+  create:  function (user) {
+    var item = getRandomView();
+    if(item ) {
+      var view = {
+        viewableId: item.id,
+        viewableType: item.type 
+      }; 
+
+      request({
+        host: host,
+        port: port,
+        method: 'POST',
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": user.id
+        }, 
+        path: '/api/views'
+      }, JSON.stringify(view), function (res) {
+        //      console.dir(res);
+      }); 
+    }
+  }
+};
+
 var get = [
   Articles.get,
   Subarticles.get
@@ -378,13 +407,40 @@ var random = [
 ];
 
 var post = [
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
+  View.create,
   DownVotes.create,
   UpVotes.create,
+  UpVotes.create,
+  Articles.create,
   Articles.create,
   Subarticles.create
 ];
 
-var actions = [get, post];
+var actions = [get, post, post];
 
 var run = function (user) {
   var rand = Math.random();
